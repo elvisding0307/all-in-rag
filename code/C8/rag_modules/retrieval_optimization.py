@@ -61,8 +61,37 @@ class RetrievalOptimizationModule:
         vector_docs = self.vector_retriever.invoke(query)
         bm25_docs = self.bm25_retriever.invoke(query)
 
+        # 打印向量检索结果
+        print("\n" + "-" * 50)
+        print("🔵 FAISS 向量检索结果 (top 5):")
+        print("-" * 50)
+        for i, doc in enumerate(vector_docs, 1):
+            dish = doc.metadata.get('dish_name', '未知')
+            content_preview = doc.page_content[:80].replace('\n', ' ')
+            print(f"  {i}. [{dish}] {content_preview}...")
+
+        # 打印 BM25 检索结果
+        print("\n" + "-" * 50)
+        print("🟢 BM25 关键词检索结果 (top 5):")
+        print("-" * 50)
+        for i, doc in enumerate(bm25_docs, 1):
+            dish = doc.metadata.get('dish_name', '未知')
+            content_preview = doc.page_content[:80].replace('\n', ' ')
+            print(f"  {i}. [{dish}] {content_preview}...")
+
         # 使用RRF重排
         reranked_docs = self._rrf_rerank(vector_docs, bm25_docs)
+
+        # 打印 RRF 重排后的最终结果
+        print("\n" + "-" * 50)
+        print(f"🏆 RRF 重排后最终结果 (top {top_k}):")
+        print("-" * 50)
+        for i, doc in enumerate(reranked_docs[:top_k], 1):
+            dish = doc.metadata.get('dish_name', '未知')
+            rrf_score = doc.metadata.get('rrf_score', 0)
+            content_preview = doc.page_content[:80].replace('\n', ' ')
+            print(f"  {i}. [{dish}] RRF={rrf_score:.6f} | {content_preview}...")
+
         return reranked_docs[:top_k]
     
     def metadata_filtered_search(self, query: str, filters: Dict[str, Any], top_k: int = 5) -> List[Document]:
@@ -79,8 +108,11 @@ class RetrievalOptimizationModule:
         """
         # 先进行混合检索，获取更多候选
         docs = self.hybrid_search(query, top_k * 3)
-        
+
         # 应用元数据过滤
+        print("\n" + "-" * 50)
+        print(f"🏷️  元数据过滤 (条件: {filters}):")
+        print("-" * 50)
         filtered_docs = []
         for doc in docs:
             match = True
@@ -97,12 +129,18 @@ class RetrievalOptimizationModule:
                 else:
                     match = False
                     break
-            
+
+            dish = doc.metadata.get('dish_name', '未知')
+            meta_val = {k: doc.metadata.get(k, 'N/A') for k in filters}
+            status = "✅ 匹配" if match else "❌ 过滤"
+            print(f"  {status} | [{dish}] 元数据: {meta_val}")
+
             if match:
                 filtered_docs.append(doc)
                 if len(filtered_docs) >= top_k:
                     break
-        
+
+        print(f"\n🏷️  过滤结果: {len(filtered_docs)}/{len(docs)} 个文档匹配")
         return filtered_docs
 
     def _rrf_rerank(self, vector_docs: List[Document], bm25_docs: List[Document], k: int = 60) -> List[Document]:
@@ -120,37 +158,48 @@ class RetrievalOptimizationModule:
         doc_scores = {}
         doc_objects = {}
 
+        print("\n" + "=" * 50)
+        print("🔄 RRF 重排计算过程 (k=60):")
+        print("=" * 50)
+
         # 计算向量检索结果的RRF分数
+        print("\n📊 向量检索 RRF 分数:")
         for rank, doc in enumerate(vector_docs):
-            # 使用文档内容的哈希作为唯一标识
             doc_id = hash(doc.page_content)
             doc_objects[doc_id] = doc
-
-            # RRF公式: 1 / (k + rank)
             rrf_score = 1.0 / (k + rank + 1)
             doc_scores[doc_id] = doc_scores.get(doc_id, 0) + rrf_score
-
+            dish = doc.metadata.get('dish_name', '未知')
+            print(f"  rank{rank+1}: 1/(60+{rank+1}) = {rrf_score:.6f} | [{dish}]")
             logger.debug(f"向量检索 - 文档{rank+1}: RRF分数 = {rrf_score:.4f}")
 
         # 计算BM25检索结果的RRF分数
+        print("\n📊 BM25 检索 RRF 分数:")
         for rank, doc in enumerate(bm25_docs):
             doc_id = hash(doc.page_content)
             doc_objects[doc_id] = doc
-
             rrf_score = 1.0 / (k + rank + 1)
             doc_scores[doc_id] = doc_scores.get(doc_id, 0) + rrf_score
-
+            dish = doc.metadata.get('dish_name', '未知')
+            print(f"  rank{rank+1}: 1/(60+{rank+1}) = {rrf_score:.6f} | [{dish}]")
             logger.debug(f"BM25检索 - 文档{rank+1}: RRF分数 = {rrf_score:.4f}")
 
         # 按最终RRF分数排序
         sorted_docs = sorted(doc_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # 打印最终合并排序结果
+        print("\n📊 RRF 合并后最终排序:")
+        for rank, (doc_id, final_score) in enumerate(sorted_docs, 1):
+            if doc_id in doc_objects:
+                doc = doc_objects[doc_id]
+                dish = doc.metadata.get('dish_name', '未知')
+                print(f"  {rank}. [{dish}] 总分={final_score:.6f}")
 
         # 构建最终结果
         reranked_docs = []
         for doc_id, final_score in sorted_docs:
             if doc_id in doc_objects:
                 doc = doc_objects[doc_id]
-                # 将RRF分数添加到文档元数据中
                 doc.metadata['rrf_score'] = final_score
                 reranked_docs.append(doc)
                 logger.debug(f"最终排序 - 文档: {doc.page_content[:50]}... 最终RRF分数: {final_score:.4f}")

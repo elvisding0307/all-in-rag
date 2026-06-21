@@ -18,9 +18,9 @@ def load_config():
     else:
         print("警告: 未找到config.json配置文件，将使用默认配置")
         return {
-            "kimi": {
-                "api_key": "",
-                "base_url": "https://api.moonshot.cn/v1"
+            "ollama": {
+                "api_key": "ollama",
+                "base_url": "http://localhost:11434/v1"
             },
             "output": {
                 "format": "neo4j",
@@ -30,12 +30,7 @@ def load_config():
 
 def setup_api_key():
     """设置API密钥"""
-    api_key = os.getenv('KIMI_API_KEY')
-    if not api_key:
-        api_key = input("请输入Kimi API密钥: ").strip()
-        if not api_key:
-            print("错误: 必须提供API密钥")
-            sys.exit(1)
+    api_key = os.getenv('OLLAMA_API_KEY', 'ollama')
     return api_key
 
 def get_recipe_directory():
@@ -84,10 +79,8 @@ def test_single_recipe():
     
     # 加载配置
     config = load_config()
-    api_key = config["kimi"].get("api_key")
-    if not api_key or api_key == "YOUR_KIMI_API_KEY_HERE":
-        api_key = setup_api_key()
-    
+    api_key = config["ollama"].get("api_key", "ollama")
+
     try:
         agent = KimiRecipeAgent(api_key)
         recipe_info = agent.extract_recipe_info(test_recipe, "dishes/vegetable_dish/红烧茄子.md")
@@ -113,10 +106,8 @@ def main():
     config = load_config()
     
     # 设置API密钥
-    api_key = config["kimi"].get("api_key")
-    if not api_key or api_key == "YOUR_KIMI_API_KEY_HERE":
-        api_key = setup_api_key()
-    
+    api_key = config["ollama"].get("api_key", "ollama")
+
     # 获取菜谱目录
     recipe_dir = get_recipe_directory()
     
@@ -135,7 +126,7 @@ def main():
     try:
         # 创建AI agent
         print("\n🤖 初始化AI Agent...")
-        ai_agent = KimiRecipeAgent(api_key, config["kimi"].get("base_url"))
+        ai_agent = KimiRecipeAgent(api_key, config["ollama"].get("base_url"))
         
         # 创建知识图谱构建器
         output_dir = config["output"].get("directory", "./ai_output")
@@ -184,7 +175,7 @@ def show_help():
   python run_ai_agent.py test
   
 环境变量:
-          KIMI_API_KEY - Kimi API密钥
+          OLLAMA_BASE_URL - Ollama服务地址 (默认 http://localhost:11434/v1)
   
 配置文件:
   config.json - 详细配置选项

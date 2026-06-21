@@ -95,7 +95,7 @@ def clean_batches(output_dir: str):
 def merge_batches(output_dir: str):
     """手动合并所有批次数据"""
     config = load_config()
-    api_key = config["kimi"].get("api_key")
+    api_key = config["ollama"].get("api_key")
     
     if not api_key:
         print("❌ 未找到API密钥配置")
@@ -124,7 +124,7 @@ def merge_batches(output_dir: str):
 def continue_processing(recipe_dir: str, output_dir: str):
     """继续处理中断的任务"""
     config = load_config()
-    api_key = config["kimi"].get("api_key")
+    api_key = config["ollama"].get("api_key")
     
     if not api_key:
         print("❌ 未找到API密钥配置")

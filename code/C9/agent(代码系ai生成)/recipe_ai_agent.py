@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-基于Kimi API的智能菜谱解析AI Agent
+基于Ollama本地大模型的智能菜谱解析AI Agent
 """
 
 import os
@@ -59,9 +59,9 @@ class RecipeInfo:
             self.nutrition_info = {}
 
 class KimiRecipeAgent:
-    """Kimi菜谱解析AI Agent"""
-    
-    def __init__(self, api_key: str, base_url: str = "https://api.moonshot.cn/v1"):
+    """菜谱解析AI Agent（基于Ollama本地大模型）"""
+
+    def __init__(self, api_key: str = "ollama", base_url: str = "http://localhost:11434/v1"):
         self.api_key = api_key
         self.base_url = base_url
         self.client = OpenAI(
@@ -100,26 +100,26 @@ class KimiRecipeAgent:
         # 预定义的工具
         self.cooking_tools = ["炒锅", "平底锅", "蒸锅", "刀", "案板", "筷子", "锅铲", "勺子"]
     
-    def call_kimi_api(self, messages: List[Dict], max_retries: int = 3) -> str:
-        """调用Kimi API"""
+    def call_ollama_api(self, messages: List[Dict], max_retries: int = 3) -> str:
+        """调用Ollama API"""
         for attempt in range(max_retries):
             try:
                 response = self.client.chat.completions.create(
-                    model="kimi-k2-0711-preview",
+                    model="gemma4:latest",
                     messages=messages,
                     temperature=0.3,
                     max_tokens=2048,
                     stream=False
                 )
-                
+
                 return response.choices[0].message.content
-                    
+
             except Exception as e:
                 print(f"API调用错误 (尝试 {attempt + 1}): {str(e)}")
                 if attempt < max_retries - 1:
                     time.sleep(2 ** attempt)  # 指数退避
-                    
-        raise Exception("Kimi API调用失败")
+
+        raise Exception("Ollama API调用失败")
     
     def infer_category_from_path(self, file_path: str) -> str:
         """根据文件路径推断菜谱分类"""
@@ -214,7 +214,7 @@ class KimiRecipeAgent:
         ]
         
         try:
-            response = self.call_kimi_api(messages)
+            response = self.call_ollama_api(messages)
             
             # 清理响应，确保是有效的JSON
             response = response.strip()
@@ -1301,12 +1301,12 @@ def main():
     
     parser = argparse.ArgumentParser(description='使用AI智能解析菜谱生成知识图谱')
     parser.add_argument('recipe_dir', help='菜谱目录路径')
-    parser.add_argument('-k', '--api-key', required=True, help='Kimi API密钥')
+    parser.add_argument('-k', '--api-key', default='ollama', help='Ollama API密钥（默认: ollama）')
     parser.add_argument('-o', '--output', default='./ai_output', help='输出目录路径')
-    parser.add_argument('--format', choices=['csv', 'neo4j'], default='neo4j', 
+    parser.add_argument('--format', choices=['csv', 'neo4j'], default='neo4j',
                        help='输出格式 (csv 或 neo4j)')
-    parser.add_argument('--base-url', default='https://api.moonshot.cn/v1', 
-                       help='Kimi API基础URL')
+    parser.add_argument('--base-url', default='http://localhost:11434/v1',
+                       help='Ollama API基础URL')
     
     args = parser.parse_args()
     
@@ -1316,7 +1316,7 @@ def main():
         return
     
     # 创建AI agent
-    print("初始化Kimi AI Agent...")
+    print("初始化Ollama AI Agent...")
     ai_agent = KimiRecipeAgent(args.api_key, args.base_url)
     
     # 创建知识图谱构建器
@@ -1340,8 +1340,8 @@ if __name__ == "__main__":
     # 测试用例
     if len(os.sys.argv) == 1:
         print("AI菜谱解析器测试模式")
-        print("请提供Kimi API密钥和菜谱目录路径")
+        print("请提供菜谱目录路径（Ollama默认使用本地服务）")
         print("使用方法:")
-        print("python recipe_ai_agent.py /path/to/recipes -k YOUR_API_KEY")
+        print("python recipe_ai_agent.py /path/to/recipes")
     else:
         main() 

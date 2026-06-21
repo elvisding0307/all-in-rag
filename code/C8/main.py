@@ -5,6 +5,7 @@ RAG系统主程序
 import os
 import sys
 import logging
+import requests
 from pathlib import Path
 from typing import List
 
@@ -50,9 +51,13 @@ class RecipeRAGSystem:
         if not Path(self.config.data_path).exists():
             raise FileNotFoundError(f"数据路径不存在: {self.config.data_path}")
 
-        # 检查API密钥
-        if not os.getenv("MOONSHOT_API_KEY"):
-            raise ValueError("请设置 MOONSHOT_API_KEY 环境变量")
+        # 检查Ollama服务
+        try:
+            resp = requests.get("http://localhost:11434/api/tags", timeout=5)
+            if resp.status_code != 200:
+                raise ValueError("Ollama 服务不可用，请确认 ollama serve 已启动")
+        except requests.RequestException:
+            raise ValueError("无法连接 Ollama 服务，请确认 ollama serve 已启动（默认地址: http://localhost:11434）")
     
     def initialize_system(self):
         """初始化所有模块"""
@@ -148,21 +153,22 @@ class RecipeRAGSystem:
 
         # 2. 智能查询重写（根据路由类型）
         if route_type == 'list':
-            # 列表查询保持原查询
             rewritten_query = question
             print(f"📝 列表查询保持原样: {question}")
         else:
-            # 详细查询和一般查询使用智能重写
-            print("🤖 智能分析查询...")
+            print("🤖 查询重写中...")
             rewritten_query = self.generation_module.query_rewrite(question)
-        
+            print(f"📝 原始查询: {question}")
+            print(f"📝 重写后查询: {rewritten_query}")
+
         # 3. 检索相关子块（自动应用元数据过滤）
-        print("🔍 检索相关文档...")
+        print("\n🔍 开始检索，查询语句: " + rewritten_query)
         filters = self._extract_filters_from_query(question)
         if filters:
-            print(f"应用过滤条件: {filters}")
+            print(f"🏷️  提取到过滤条件: {filters}")
             relevant_chunks = self.retrieval_module.metadata_filtered_search(rewritten_query, filters, top_k=self.config.top_k)
         else:
+            print("🏷️  未检测到过滤条件，使用混合检索")
             relevant_chunks = self.retrieval_module.hybrid_search(rewritten_query, top_k=self.config.top_k)
 
         # 显示检索到的子块信息
@@ -181,8 +187,18 @@ class RecipeRAGSystem:
                     chunk_info.append(f"{dish_name}(内容片段)")
 
             print(f"找到 {len(relevant_chunks)} 个相关文档块: {', '.join(chunk_info)}")
-        else:
-            print(f"找到 {len(relevant_chunks)} 个相关文档块")
+
+        # 打印检索到的子块内容
+        print("\n" + "=" * 60)
+        print("📄 检索结果（子块内容）:")
+        print("=" * 60)
+        for i, chunk in enumerate(relevant_chunks, 1):
+            dish_name = chunk.metadata.get('dish_name', '未知')
+            category = chunk.metadata.get('category', '未知')
+            difficulty = chunk.metadata.get('difficulty', '未知')
+            print(f"\n--- 子块 {i}: {dish_name} | 分类: {category} | 难度: {difficulty} ---")
+            print(chunk.page_content[:500])
+        print("=" * 60)
 
         # 4. 检查是否找到相关内容
         if not relevant_chunks:
@@ -190,37 +206,32 @@ class RecipeRAGSystem:
 
         # 5. 根据路由类型选择回答方式
         if route_type == 'list':
-            # 列表查询：直接返回菜品名称列表
-            print("📋 生成菜品列表...")
+            print("\n" + "=" * 50)
+            print("📋 父文档映射 (子块 → 完整文档):")
+            print("=" * 50)
             relevant_docs = self.data_module.get_parent_documents(relevant_chunks)
 
-            # 显示找到的文档名称
             doc_names = []
-            for doc in relevant_docs:
+            for i, doc in enumerate(relevant_docs, 1):
                 dish_name = doc.metadata.get('dish_name', '未知菜品')
                 doc_names.append(dish_name)
+                print(f"  子块{i} → 父文档: [{dish_name}] (长度: {len(doc.page_content)} 字符)")
 
-            if doc_names:
-                print(f"找到文档: {', '.join(doc_names)}")
-
+            print(f"\n📋 生成菜品列表...")
             return self.generation_module.generate_list_answer(question, relevant_docs)
         else:
-            # 详细查询：获取完整文档并生成详细回答
-            print("获取完整文档...")
+            print("\n" + "=" * 50)
+            print("📋 父文档映射 (子块 → 完整文档):")
+            print("=" * 50)
             relevant_docs = self.data_module.get_parent_documents(relevant_chunks)
 
-            # 显示找到的文档名称
             doc_names = []
-            for doc in relevant_docs:
+            for i, doc in enumerate(relevant_docs, 1):
                 dish_name = doc.metadata.get('dish_name', '未知菜品')
                 doc_names.append(dish_name)
+                print(f"  子块{i} → 父文档: [{dish_name}] (长度: {len(doc.page_content)} 字符)")
 
-            if doc_names:
-                print(f"找到文档: {', '.join(doc_names)}")
-            else:
-                print(f"对应 {len(relevant_docs)} 个完整文档")
-
-            print("✍️ 生成详细回答...")
+            print("\n✍️ 生成详细回答...")
 
             # 根据路由类型自动选择回答模式
             if route_type == "detail":
